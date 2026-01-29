@@ -4,6 +4,9 @@ import { UploadZone } from '../components/UploadZone';
 import { ClothingGallery, type ClothingItem } from '../components/ClothingGallery';
 import { ResultDisplay } from '../components/ResultDisplay';
 import { GenerateButton } from '../components/GenerateButton';
+import { generateOutfitChange } from '../lib/aiService';
+import { useToast } from '../hooks/use-toast';
+import { Toaster } from '../components/ui/toaster';
 
 const Index = () => {
   const [personImage, setPersonImage] = useState<string | null>(null);
@@ -11,10 +14,28 @@ const Index = () => {
   const [selectedClothing, setSelectedClothing] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleClothingSelect = (item: ClothingItem) => {
     setSelectedClothing(item.id);
     setClothingImage(item.image);
+  };
+
+  // Convert image URL to base64
+  const urlToBase64 = async (url: string): Promise<string> => {
+    // If already base64, return as is
+    if (url.startsWith('data:')) {
+      return url;
+    }
+
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   };
 
   const handleGenerate = async () => {
@@ -23,13 +44,39 @@ const Index = () => {
     setIsProcessing(true);
     setResultImage(null);
 
-    // Simulate AI processing (in real app, this would call an AI API)
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      // Convert images to base64 if needed
+      const personBase64 = await urlToBase64(personImage);
+      const clothingBase64 = await urlToBase64(clothingImage);
 
-    // For demo, use the person image as result
-    // In production, this would be the AI-generated result
-    setResultImage(personImage);
-    setIsProcessing(false);
+      const result = await generateOutfitChange({
+        personImage: personBase64,
+        clothingImage: clothingBase64,
+      });
+
+      if (result.success && result.resultImage) {
+        setResultImage(result.resultImage);
+        toast({
+          title: '换装成功',
+          description: 'AI已成功生成换装效果',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '生成失败',
+          description: result.error || '请稍后重试',
+        });
+      }
+    } catch (error) {
+      console.error('Generate error:', error);
+      toast({
+        variant: 'destructive',
+        title: '生成失败',
+        description: '网络错误，请稍后重试',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleReset = () => {
@@ -193,6 +240,7 @@ const Index = () => {
           </div>
         </div>
       </footer>
+      <Toaster />
     </div>
   );
 };
